@@ -102,22 +102,22 @@ export default function Hero({ onBookingClick, heroName }: HeroProps) {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative w-[280px] sm:w-[360px] h-[380px] sm:h-[480px] group"
+              className="relative w-[280px] sm:w-[360px] h-[390px] sm:h-[490px] group"
             >
               {/* Background gold border offset */}
               <div className="absolute top-4 left-4 right-[-16px] bottom-[-16px] border border-gold-primary/35 transition-transform duration-500 group-hover:translate-x-1 group-hover:translate-y-1 -z-10" />
 
               {/* Main Image */}
-              <div className="relative w-full h-full overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] bg-graphite-dark">
+              <div className="relative w-full h-full overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] bg-graphite-dark border border-gold-primary/20">
                 <Image
-                  src="/hero-model.png"
-                  alt="Barbearia Modelo"
+                  src="/hero-model-new.jpg"
+                  alt="Barbearia do Alemão 777"
                   fill
                   priority
-                  className="object-cover object-center transition-transform duration-700 group-hover:scale-103"
+                  className="object-cover object-[center_12%] transition-transform duration-700 group-hover:scale-103"
                 />
                 {/* Gradient vignette */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
               </div>
             </motion.div>
           </div>
