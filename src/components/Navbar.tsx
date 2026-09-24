@@ -38,7 +38,7 @@ export default function Navbar({ onBookingClick }: NavbarProps) {
   const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     e.preventDefault();
     setIsOpen(false);
-    
+
     if (href === '#') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -55,11 +55,10 @@ export default function Navbar({ onBookingClick }: NavbarProps) {
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
-          scrolled
-            ? 'bg-[#0A0A0B]/90 backdrop-blur-md border-b border-graphite-border/60 py-3 shadow-lg'
-            : 'bg-transparent py-4'
-        }`}
+        className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${scrolled
+          ? 'bg-[#0A0A0B]/90 backdrop-blur-md border-b border-graphite-border/60 py-3 shadow-lg'
+          : 'bg-transparent py-4'
+          }`}
       >
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
           {/* Logo */}
