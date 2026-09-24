@@ -8,7 +8,11 @@ interface Service {
   name: string;
   description: string | null;
   price: number;
+  promoPrice?: number | null;
+  promoStartDate?: string | null;
+  promoEndDate?: string | null;
   durationMin: number;
+  imageUrl?: string | null;
 }
 
 interface ServicesProps {
@@ -23,6 +27,15 @@ export default function Services({ services, onSelectService }: ServicesProps) {
       style: 'currency',
       currency: 'BRL',
     }).format(value);
+  };
+
+  // Check if promo is currently active
+  const isPromoActive = (s: Service) => {
+    if (!s.promoPrice || Number(s.promoPrice) <= 0) return false;
+    const now = new Date();
+    if (s.promoStartDate && new Date(s.promoStartDate) > now) return false;
+    if (s.promoEndDate && new Date(s.promoEndDate) < now) return false;
+    return true;
   };
 
   return (
@@ -94,50 +107,86 @@ export default function Services({ services, onSelectService }: ServicesProps) {
               </h3>
               
               <div className="divide-y divide-black/10">
-                {services.map((service, index) => (
-                  <motion.div
-                    key={service.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.4, delay: index * 0.05 }}
-                    className="py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
-                  >
-                    <div className="flex-1">
-                      {/* Name & Duration */}
-                      <div className="flex items-center gap-3 mb-1.5">
-                        <h4 className="font-serif text-lg font-bold text-black uppercase tracking-wide group-hover:text-orange-accent transition-colors duration-300">
-                          {service.name}
-                        </h4>
-                        <span className="flex items-center gap-1 text-black/40 text-xs font-light">
-                          <Clock className="w-3.5 h-3.5 text-orange-accent" />
-                          {service.durationMin} min
-                        </span>
-                      </div>
-                      
-                      {/* Description */}
-                      {service.description && (
-                        <p className="text-black/60 font-light text-xs leading-relaxed max-w-xl">
-                          {service.description}
-                        </p>
-                      )}
-                    </div>
+                {services.map((service, index) => {
+                  const hasPromo = isPromoActive(service);
+                  const effectivePrice = hasPromo ? Number(service.promoPrice) : Number(service.price);
 
-                    {/* Price & Action */}
-                    <div className="flex items-center justify-between sm:justify-end gap-6">
-                      <span className="text-xl font-extrabold text-black">
-                        {formatPrice(service.price)}
-                      </span>
-                      
-                      <button
-                        onClick={() => onSelectService(service.id)}
-                        className="px-4 py-2 bg-transparent hover:bg-orange-accent text-orange-accent hover:text-white border border-orange-accent/30 hover:border-orange-accent font-bold text-[10px] uppercase tracking-wider transition-all duration-300"
-                      >
-                        Agendar
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
+                  return (
+                    <motion.div
+                      key={service.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.4, delay: index * 0.05 }}
+                      className="py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+                    >
+                      <div className="flex-1 flex items-start gap-4">
+                        {service.imageUrl && (
+                          <div className="relative w-16 h-16 rounded overflow-hidden flex-shrink-0 bg-black/10 border border-black/10 hidden sm:block">
+                            <img
+                              src={service.imageUrl}
+                              alt={service.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          {/* Name, Badge & Duration */}
+                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <h4 className="font-serif text-lg font-bold text-black uppercase tracking-wide group-hover:text-orange-accent transition-colors duration-300">
+                              {service.name}
+                            </h4>
+
+                            {hasPromo && (
+                              <span className="px-2 py-0.5 bg-amber-500 text-black text-[9px] font-bold uppercase tracking-wider rounded">
+                                Promoção
+                              </span>
+                            )}
+
+                            <span className="flex items-center gap-1 text-black/40 text-xs font-light ml-1">
+                              <Clock className="w-3.5 h-3.5 text-orange-accent" />
+                              {service.durationMin} min
+                            </span>
+                          </div>
+                          
+                          {/* Description */}
+                          {service.description && (
+                            <p className="text-black/60 font-light text-xs leading-relaxed max-w-xl">
+                              {service.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Price & Action */}
+                      <div className="flex items-center justify-between sm:justify-end gap-6">
+                        <div className="text-right">
+                          {hasPromo ? (
+                            <div>
+                              <span className="text-xs text-black/40 line-through mr-2">
+                                {formatPrice(service.price)}
+                              </span>
+                              <span className="text-xl font-extrabold text-orange-accent font-serif">
+                                {formatPrice(effectivePrice)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xl font-extrabold text-black font-serif">
+                              {formatPrice(service.price)}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => onSelectService(service.id)}
+                          className="px-4 py-2 bg-transparent hover:bg-orange-accent text-orange-accent hover:text-white border border-orange-accent/30 hover:border-orange-accent font-bold text-[10px] uppercase tracking-wider transition-all duration-300"
+                        >
+                          Agendar
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           </div>

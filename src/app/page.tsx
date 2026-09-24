@@ -55,9 +55,13 @@ export default async function Home() {
       services = rawServices.map((service) => ({
         id: service.id,
         name: service.name,
-        description: service.description,
+        description: service.description || '',
         price: Number(service.price),
+        promoPrice: service.promoPrice ? Number(service.promoPrice) : null,
+        promoStartDate: service.promoStartDate ? service.promoStartDate.toISOString() : null,
+        promoEndDate: service.promoEndDate ? service.promoEndDate.toISOString() : null,
         durationMin: service.durationMin,
+        imageUrl: service.imageUrl || null,
       }));
     }
 

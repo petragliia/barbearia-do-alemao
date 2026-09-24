@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import { 
   Calendar, 
   DollarSign, 
@@ -25,8 +26,41 @@ import {
   ChevronRight,
   AlertCircle,
   Sparkles,
-  Scissors
+  Scissors,
+  Plus,
+  Trash2,
+  Edit3,
+  Upload,
+  Tag,
+  CheckCircle2,
+  Layers,
+  ArrowUp,
+  ArrowDown,
+  Image as ImageIcon
 } from 'lucide-react';
+
+interface ServiceItem {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  price: number;
+  promoPrice: number | null;
+  promoStartDate: string | null;
+  promoEndDate: string | null;
+  durationMin: number;
+  imageUrl: string | null;
+  displayOrder: number;
+  allowedBarberIds: string[];
+  isActive: boolean;
+}
+
+interface BarberItem {
+  id: string;
+  name: string;
+  role: string;
+  avatarUrl?: string | null;
+}
 
 interface Appointment {
   id: string;
@@ -61,8 +95,304 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ initialAppointments, tenant, views }: AdminDashboardProps) {
-  // Tabs: appointments | notifications | reports | availability | whatsapp | cms
-  const [activeTab, setActiveTab] = useState<'appointments' | 'notifications' | 'reports' | 'availability' | 'whatsapp' | 'cms'>('appointments');
+  // Tabs: appointments | notifications | reports | availability | whatsapp | cms | services
+  const [activeTab, setActiveTab] = useState<'appointments' | 'notifications' | 'reports' | 'availability' | 'whatsapp' | 'cms' | 'services'>('appointments');
+
+  // Services Management State
+  const [servicesList, setServicesList] = useState<ServiceItem[]>([]);
+  const [barbersList, setBarbersList] = useState<BarberItem[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState<string>('ALL');
+
+  // Modal & Form State
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+
+  const [serviceForm, setServiceForm] = useState({
+    name: '',
+    description: '',
+    category: 'corte',
+    price: '',
+    promoPrice: '',
+    promoStartDate: '',
+    promoEndDate: '',
+    durationMin: 30,
+    imageUrl: '',
+    displayOrder: 1,
+    allowedBarberIds: [] as string[],
+    isActive: true,
+  });
+
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [serviceFormError, setServiceFormError] = useState<string | null>(null);
+  const [serviceFormSuccess, setServiceFormSuccess] = useState<string | null>(null);
+  const [savingService, setSavingService] = useState(false);
+
+  // Fetch Services API
+  const fetchServices = useCallback(async () => {
+    setLoadingServices(true);
+    try {
+      const res = await fetch('/api/admin/services');
+      if (res.ok) {
+        const data = await res.json();
+        setServicesList(data.services || []);
+        setBarbersList(data.barbers || []);
+      }
+    } catch (err) {
+      console.error('Error fetching services:', err);
+    } finally {
+      setLoadingServices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchServices();
+  }, [fetchServices]);
+
+  useEffect(() => {
+    if (activeTab === 'services') {
+      fetchServices();
+    }
+  }, [activeTab, fetchServices]);
+
+  // Check if promo is currently active
+  const checkIsPromoActive = (s: ServiceItem) => {
+    if (s.promoPrice === null || s.promoPrice === undefined || Number(s.promoPrice) <= 0) return false;
+    const now = new Date();
+    if (s.promoStartDate && new Date(s.promoStartDate) > now) return false;
+    if (s.promoEndDate && new Date(s.promoEndDate) < now) return false;
+    return true;
+  };
+
+  // Open Create Service Modal
+  const handleOpenCreateModal = () => {
+    setEditingServiceId(null);
+    setServiceForm({
+      name: '',
+      description: '',
+      category: 'corte',
+      price: '',
+      promoPrice: '',
+      promoStartDate: '',
+      promoEndDate: '',
+      durationMin: 30,
+      imageUrl: '',
+      displayOrder: servicesList.length + 1,
+      allowedBarberIds: barbersList.map(b => b.id),
+      isActive: true,
+    });
+    setServiceFormError(null);
+    setServiceFormSuccess(null);
+    setIsServiceModalOpen(true);
+  };
+
+  // Open Edit Service Modal
+  const handleOpenEditModal = (service: ServiceItem) => {
+    setEditingServiceId(service.id);
+    
+    const formatForInput = (isoStr: string | null) => {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
+    setServiceForm({
+      name: service.name,
+      description: service.description || '',
+      category: service.category || 'corte',
+      price: String(service.price),
+      promoPrice: service.promoPrice !== null && service.promoPrice !== undefined ? String(service.promoPrice) : '',
+      promoStartDate: formatForInput(service.promoStartDate),
+      promoEndDate: formatForInput(service.promoEndDate),
+      durationMin: service.durationMin || 30,
+      imageUrl: service.imageUrl || '',
+      displayOrder: service.displayOrder || 1,
+      allowedBarberIds: service.allowedBarberIds || [],
+      isActive: service.isActive !== undefined ? service.isActive : true,
+    });
+    setServiceFormError(null);
+    setServiceFormSuccess(null);
+    setIsServiceModalOpen(true);
+  };
+
+  // Image Upload Handler
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setServiceFormError('O tamanho da imagem não pode exceder 5MB.');
+      return;
+    }
+
+    setUploadingImage(true);
+    setServiceFormError(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/admin/services/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setServiceForm(prev => ({ ...prev, imageUrl: data.imageUrl }));
+        setServiceFormSuccess('Imagem enviada com sucesso!');
+        setTimeout(() => setServiceFormSuccess(null), 3000);
+      } else {
+        const data = await res.json();
+        setServiceFormError(data.error || 'Erro ao enviar imagem.');
+      }
+    } catch (err) {
+      console.error(err);
+      setServiceFormError('Erro de conexão ao enviar imagem.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Save Service (Create or Update)
+  const handleSaveService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setServiceFormError(null);
+    setServiceFormSuccess(null);
+
+    if (!serviceForm.name.trim()) {
+      setServiceFormError('O nome do serviço é obrigatório.');
+      return;
+    }
+
+    if (!serviceForm.price || Number(serviceForm.price) <= 0) {
+      setServiceFormError('Informe um preço normal válido maior que zero.');
+      return;
+    }
+
+    if (serviceForm.promoPrice && Number(serviceForm.promoPrice) > Number(serviceForm.price)) {
+      setServiceFormError('O preço promocional não pode ser maior que o preço normal.');
+      return;
+    }
+
+    if (serviceForm.promoStartDate && serviceForm.promoEndDate && new Date(serviceForm.promoEndDate) < new Date(serviceForm.promoStartDate)) {
+      setServiceFormError('A data final da promoção não pode ser anterior à data inicial.');
+      return;
+    }
+
+    setSavingService(true);
+
+    const payload = {
+      name: serviceForm.name,
+      description: serviceForm.description,
+      category: serviceForm.category,
+      price: Number(serviceForm.price),
+      promoPrice: serviceForm.promoPrice ? Number(serviceForm.promoPrice) : null,
+      promoStartDate: serviceForm.promoStartDate ? new Date(serviceForm.promoStartDate).toISOString() : null,
+      promoEndDate: serviceForm.promoEndDate ? new Date(serviceForm.promoEndDate).toISOString() : null,
+      durationMin: Number(serviceForm.durationMin),
+      imageUrl: serviceForm.imageUrl,
+      displayOrder: Number(serviceForm.displayOrder),
+      allowedBarberIds: serviceForm.allowedBarberIds,
+      isActive: serviceForm.isActive,
+    };
+
+    try {
+      const url = editingServiceId ? `/api/admin/services/${editingServiceId}` : '/api/admin/services';
+      const method = editingServiceId ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const saved = data.service;
+
+        if (editingServiceId) {
+          setServicesList(prev => prev.map(s => s.id === editingServiceId ? { ...s, ...saved } : s));
+        } else {
+          setServicesList(prev => [...prev, saved]);
+        }
+
+        setServiceFormSuccess(editingServiceId ? 'Serviço atualizado com sucesso!' : 'Novo serviço criado com sucesso!');
+        setTimeout(() => {
+          setIsServiceModalOpen(false);
+          setServiceFormSuccess(null);
+        }, 1200);
+      } else {
+        const data = await res.json();
+        setServiceFormError(data.error || 'Erro ao salvar serviço.');
+      }
+    } catch (err) {
+      console.error(err);
+      setServiceFormError('Erro de conexão ao salvar serviço.');
+    } finally {
+      setSavingService(false);
+    }
+  };
+
+  // Toggle Service Active Status
+  const handleToggleServiceActive = async (service: ServiceItem) => {
+    const newStatus = !service.isActive;
+    setServicesList(prev => prev.map(s => s.id === service.id ? { ...s, isActive: newStatus } : s));
+
+    try {
+      await fetch(`/api/admin/services/${service.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: newStatus }),
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Change Service Order
+  const handleMoveServiceOrder = async (service: ServiceItem, direction: 'up' | 'down') => {
+    const newOrder = direction === 'up' ? Math.max(1, service.displayOrder - 1) : service.displayOrder + 1;
+    setServicesList(prev => prev.map(s => s.id === service.id ? { ...s, displayOrder: newOrder } : s));
+
+    try {
+      await fetch(`/api/admin/services/${service.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayOrder: newOrder }),
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Delete Service
+  const handleDeleteService = async (id: string, name: string) => {
+    if (!confirm(`Tem certeza que deseja excluir ou inativar o serviço "${name}"?`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/services/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setServicesList(prev => prev.filter(s => s.id !== id));
+      } else {
+        alert('Erro ao excluir serviço.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Filtered Services List
+  const filteredServices = useMemo(() => {
+    return servicesList.filter(s => {
+      if (serviceCategoryFilter === 'ALL') return true;
+      if (serviceCategoryFilter === 'PROMO') return checkIsPromoActive(s);
+      if (serviceCategoryFilter === 'INACTIVE') return !s.isActive;
+      return s.category.toLowerCase() === serviceCategoryFilter.toLowerCase();
+    }).sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [servicesList, serviceCategoryFilter]);
   
   // Date selection state
   const getTodayStr = () => {
@@ -593,6 +923,24 @@ export default function AdminDashboard({ initialAppointments, tenant, views }: A
           >
             <Settings className="w-4 h-4" />
             Configurações
+          </button>
+
+          {/* Tab 7: Gestão Completa de Serviços */}
+          <button
+            onClick={() => setActiveTab('services')}
+            className={`px-4 sm:px-5 py-3 font-serif text-xs font-bold uppercase tracking-widest transition-all duration-200 border-b-2 flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'services'
+                ? 'border-gold-primary text-gold-primary bg-gold-primary/5'
+                : 'border-transparent text-white/50 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Scissors className="w-4 h-4" />
+            Serviços
+            {servicesList.some(s => checkIsPromoActive(s)) && (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                PROMO
+              </span>
+            )}
           </button>
         </nav>
 
@@ -1949,6 +2297,642 @@ export default function AdminDashboard({ initialAppointments, tenant, views }: A
             </motion.div>
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* TAB 7: GESTÃO E EDIÇÃO COMPLETA DE SERVIÇOS */}
+        {/* ========================================================================= */}
+        {activeTab === 'services' && (
+          <div className="space-y-6">
+            
+            {/* Header Control Bar */}
+            <div className="glass-panel p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border border-gold-primary/10">
+              <div>
+                <span className="text-[10px] text-gold-primary uppercase tracking-[0.25em] font-bold block mb-1">
+                  Catálogo & Tabela de Preços
+                </span>
+                <h2 className="text-2xl font-bold font-serif text-white uppercase tracking-wider flex items-center gap-3">
+                  Gerenciamento de Serviços
+                </h2>
+                <p className="text-xs text-white/50 font-light mt-1">
+                  Cadastre, edite valores, configure promoções com encerramento automático e ajuste barbeiros habilitados.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 self-stretch md:self-auto">
+                <button
+                  onClick={fetchServices}
+                  disabled={loadingServices}
+                  className="px-4 py-2.5 bg-graphite-dark hover:bg-white/5 border border-graphite-border text-xs text-white/80 hover:text-gold-primary flex items-center gap-2 transition-all"
+                  title="Atualizar lista"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingServices ? 'animate-spin text-gold-primary' : ''}`} />
+                  <span>Atualizar</span>
+                </button>
+
+                <button
+                  onClick={handleOpenCreateModal}
+                  className="px-5 py-2.5 bg-gold-primary hover:bg-gold-hover text-black font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-[0_4px_20px_rgba(197,168,128,0.25)] flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Novo Serviço</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">
+              {[
+                { id: 'ALL', label: 'Todos os Serviços' },
+                { id: 'corte', label: 'Cortes' },
+                { id: 'barba', label: 'Barba' },
+                { id: 'combo', label: 'Combos' },
+                { id: 'sobrancelha', label: 'Sobrancelha' },
+                { id: 'pezinho', label: 'Pezinho' },
+                { id: 'PROMO', label: '🔥 Em Promoção' },
+                { id: 'INACTIVE', label: 'Inativos' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setServiceCategoryFilter(cat.id)}
+                  className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border whitespace-nowrap ${
+                    serviceCategoryFilter === cat.id
+                      ? 'bg-gold-primary text-black border-gold-primary shadow-sm shadow-gold-primary/20'
+                      : 'bg-graphite-dark text-white/60 border-graphite-border hover:text-white hover:border-gold-primary/40'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Services Grid List */}
+            {loadingServices ? (
+              <div className="p-16 text-center text-white/40 flex flex-col items-center justify-center gap-3 glass-panel">
+                <RefreshCw className="w-6 h-6 animate-spin text-gold-primary" />
+                <span>Carregando catálogo de serviços...</span>
+              </div>
+            ) : filteredServices.length === 0 ? (
+              <div className="p-16 text-center text-white/40 glass-panel space-y-3">
+                <Scissors className="w-10 h-10 mx-auto text-white/20" />
+                <p className="text-sm font-light">Nenhum serviço encontrado no filtro selecionado.</p>
+                <button
+                  onClick={handleOpenCreateModal}
+                  className="px-4 py-2 bg-gold-primary/10 text-gold-primary border border-gold-primary/30 text-xs font-bold uppercase tracking-wider hover:bg-gold-primary hover:text-black transition-all"
+                >
+                  Cadastrar Primeiro Serviço
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredServices.map((service) => {
+                  const hasPromo = checkIsPromoActive(service);
+                  const allowedBarberNames = barbersList
+                    .filter(b => !service.allowedBarberIds || service.allowedBarberIds.length === 0 || service.allowedBarberIds.includes(b.id))
+                    .map(b => b.name);
+
+                  return (
+                    <motion.div
+                      layout
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={service.id}
+                      className={`glass-panel p-5 border flex flex-col justify-between relative group transition-all duration-300 ${
+                        !service.isActive 
+                          ? 'border-graphite-border/40 opacity-60 bg-black/40' 
+                          : hasPromo 
+                            ? 'border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.1)]' 
+                            : 'border-gold-primary/20 hover:border-gold-primary/50'
+                      }`}
+                    >
+                      {/* Top Badges & Image Preview */}
+                      <div>
+                        <div className="relative h-40 w-full mb-4 overflow-hidden rounded bg-black/60 border border-graphite-border/60">
+                          {service.imageUrl ? (
+                            <Image
+                              src={service.imageUrl}
+                              alt={service.name}
+                              fill
+                              className="object-cover object-center group-hover:scale-105 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-white/20 bg-gradient-to-b from-graphite-dark to-black">
+                              <Scissors className="w-10 h-10 mb-1 text-gold-primary/40" />
+                              <span className="text-[10px] uppercase tracking-wider">Sem Imagem</span>
+                            </div>
+                          )}
+
+                          {/* Gradient Overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+
+                          {/* Order Pill */}
+                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/80 border border-white/20 text-[10px] font-mono text-white/80 rounded">
+                            #{service.displayOrder}
+                          </div>
+
+                          {/* Category Badge */}
+                          <div className="absolute top-2 right-2 px-2.5 py-0.5 bg-gold-primary text-black font-bold uppercase tracking-widest text-[9px]">
+                            {service.category}
+                          </div>
+
+                          {/* Promo Badge */}
+                          {hasPromo && (
+                            <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-amber-500 text-black font-bold uppercase tracking-widest text-[10px] flex items-center gap-1 shadow-md animate-pulse">
+                              <Sparkles className="w-3 h-3" />
+                              Promoção Ativa
+                            </div>
+                          )}
+
+                          {/* Inactive Badge */}
+                          {!service.isActive && (
+                            <div className="absolute bottom-2 right-2 px-2.5 py-1 bg-rose-500/80 text-white font-bold uppercase tracking-widest text-[10px]">
+                              Inativo
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Title & Description */}
+                        <div className="mb-4">
+                          <h3 className="font-serif text-xl font-bold text-white uppercase tracking-wide group-hover:text-gold-primary transition-colors">
+                            {service.name}
+                          </h3>
+                          <p className="text-xs text-white/60 font-light mt-1.5 leading-relaxed line-clamp-2">
+                            {service.description || 'Sem descrição cadastrada.'}
+                          </p>
+                        </div>
+
+                        {/* Price & Promo Info */}
+                        <div className="p-3 bg-black/40 border border-graphite-border/60 rounded mb-4">
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Preço:</span>
+                            <div className="text-right">
+                              {hasPromo ? (
+                                <div>
+                                  <span className="text-xs text-white/40 line-through mr-2">
+                                    {formatPrice(service.price)}
+                                  </span>
+                                  <span className="text-xl font-bold text-gold-primary font-serif">
+                                    {formatPrice(service.promoPrice!)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xl font-bold text-white font-serif">
+                                  {formatPrice(service.price)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Promo Date Validity Info */}
+                          {hasPromo && service.promoEndDate && (
+                            <div className="text-[10px] text-amber-400/90 mt-1 pt-1 border-t border-white/5 flex items-center gap-1 font-mono">
+                              <Clock className="w-3 h-3" />
+                              <span>Válido até: {new Date(service.promoEndDate).toLocaleDateString('pt-BR')} às {new Date(service.promoEndDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Operational Details */}
+                        <div className="space-y-2 text-xs text-white/60 mb-6">
+                          <div className="flex items-center justify-between border-b border-graphite-border/30 pb-1.5">
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Duração:</span>
+                            <span className="font-medium text-white flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-gold-primary" />
+                              {service.durationMin} min
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Barbeiros:</span>
+                            <span className="font-medium text-white text-[11px] truncate max-w-[150px]" title={allowedBarberNames.join(', ')}>
+                              {allowedBarberNames.length > 0 ? allowedBarberNames.join(', ') : 'Todos'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons Footer */}
+                      <div className="pt-3 border-t border-graphite-border/60 flex items-center justify-between gap-2">
+                        {/* Order adjustment buttons */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleMoveServiceOrder(service, 'up')}
+                            className="p-1.5 bg-graphite-dark hover:bg-white/10 text-white/60 hover:text-gold-primary border border-graphite-border"
+                            title="Mover para cima"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMoveServiceOrder(service, 'down')}
+                            className="p-1.5 bg-graphite-dark hover:bg-white/10 text-white/60 hover:text-gold-primary border border-graphite-border"
+                            title="Mover para baixo"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Status Active Toggle */}
+                        <button
+                          onClick={() => handleToggleServiceActive(service)}
+                          className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                            service.isActive
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                              : 'bg-white/5 text-white/40 border-white/10 hover:text-white'
+                          }`}
+                          title="Alternar Ativo/Inativo"
+                        >
+                          {service.isActive ? 'Ativo' : 'Inativo'}
+                        </button>
+
+                        {/* Edit & Delete Buttons */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditModal(service)}
+                            className="p-2 bg-gold-primary/10 hover:bg-gold-primary text-gold-primary hover:text-black border border-gold-primary/30 transition-all font-bold text-xs flex items-center gap-1"
+                            title="Editar serviço"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Editar</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteService(service.id, service.name)}
+                            className="p-2 bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20 transition-all"
+                            title="Excluir serviço"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODAL DE CRIAÇÃO E EDIÇÃO COMPLETA DE SERVIÇO */}
+        {/* ========================================================================= */}
+        <AnimatePresence>
+          {isServiceModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="glass-panel w-full max-w-3xl bg-[#0A0A0B] border border-gold-primary/40 shadow-[0_20px_60px_rgba(0,0,0,0.9)] p-6 sm:p-8 my-8 relative overflow-hidden"
+              >
+                {/* Modal Close Button */}
+                <button
+                  onClick={() => setIsServiceModalOpen(false)}
+                  className="absolute top-5 right-5 text-white/40 hover:text-gold-primary transition-colors p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+
+                {/* Modal Header */}
+                <div className="flex items-center gap-3 border-b border-graphite-border pb-5 mb-6">
+                  <div className="p-3 bg-gold-primary/10 border border-gold-primary/30 text-gold-primary">
+                    <Scissors className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gold-primary uppercase tracking-[0.2em] font-bold block">
+                      {editingServiceId ? 'Edição de Serviço' : 'Novo Cadastro'}
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-bold font-serif text-white uppercase tracking-wide">
+                      {editingServiceId ? `Editar: ${serviceForm.name}` : 'Cadastrar Novo Serviço'}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Feedback Banners */}
+                {serviceFormError && (
+                  <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{serviceFormError}</span>
+                  </div>
+                )}
+
+                {serviceFormSuccess && (
+                  <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <span>{serviceFormSuccess}</span>
+                  </div>
+                )}
+
+                {/* Form Content */}
+                <form onSubmit={handleSaveService} className="space-y-6">
+                  
+                  {/* SEÇÃO 1: DADOS BÁSICOS */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-primary flex items-center gap-2 border-b border-graphite-border/40 pb-2">
+                      <Tag className="w-4 h-4" />
+                      1. Dados Básicos do Serviço
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                      {/* Nome do Serviço */}
+                      <div className="sm:col-span-8 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Nome do Serviço *</label>
+                        <input
+                          type="text"
+                          required
+                          value={serviceForm.name}
+                          onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
+                          placeholder="Ex: Corte Degradê Navalhado"
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border focus:border-gold-primary text-sm text-white outline-none transition-colors"
+                        />
+                      </div>
+
+                      {/* Categoria */}
+                      <div className="sm:col-span-4 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Categoria *</label>
+                        <select
+                          value={serviceForm.category}
+                          onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })}
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border focus:border-gold-primary text-sm text-white outline-none transition-colors cursor-pointer"
+                        >
+                          <option value="corte">Corte</option>
+                          <option value="barba">Barba</option>
+                          <option value="combo">Combo</option>
+                          <option value="sobrancelha">Sobrancelha</option>
+                          <option value="pezinho">Pezinho</option>
+                          <option value="tratamento">Tratamento</option>
+                          <option value="outros">Outros</option>
+                        </select>
+                      </div>
+
+                      {/* Descrição curta */}
+                      <div className="sm:col-span-12 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Descrição Detalhada</label>
+                        <textarea
+                          rows={2}
+                          value={serviceForm.description}
+                          onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
+                          placeholder="Descreva o que está incluso neste serviço para os clientes..."
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border focus:border-gold-primary text-sm text-white outline-none transition-colors resize-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 2: PREÇO E PROMOÇÃO */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-primary flex items-center gap-2 border-b border-graphite-border/40 pb-2">
+                      <DollarSign className="w-4 h-4" />
+                      2. Valoração & Promoção (Desconto Programado)
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                      {/* Preço Normal */}
+                      <div className="sm:col-span-6 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Preço Normal (R$) *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          value={serviceForm.price}
+                          onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })}
+                          placeholder="40.00"
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border focus:border-gold-primary text-sm text-white font-serif outline-none"
+                        />
+                      </div>
+
+                      {/* Preço Promocional */}
+                      <div className="sm:col-span-6 space-y-1.5">
+                        <label className="text-xs text-amber-400 font-semibold flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Preço Promocional (R$) (Opcional)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={serviceForm.promoPrice}
+                          onChange={(e) => setServiceForm({ ...serviceForm, promoPrice: e.target.value })}
+                          placeholder="30.00 (Deixe em branco para sem promoção)"
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-amber-500/40 focus:border-amber-400 text-sm text-amber-300 font-serif outline-none"
+                        />
+                      </div>
+
+                      {/* Data Início Promoção */}
+                      <div className="sm:col-span-6 space-y-1.5">
+                        <label className="text-xs text-white/60">Data/Hora Início da Promoção</label>
+                        <input
+                          type="datetime-local"
+                          value={serviceForm.promoStartDate}
+                          onChange={(e) => setServiceForm({ ...serviceForm, promoStartDate: e.target.value })}
+                          className="w-full px-4 py-2 bg-graphite-dark border border-graphite-border text-xs text-white outline-none cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Data Fim Promoção */}
+                      <div className="sm:col-span-6 space-y-1.5">
+                        <label className="text-xs text-white/60">Data/Hora Término da Promoção (Desativação Automática)</label>
+                        <input
+                          type="datetime-local"
+                          value={serviceForm.promoEndDate}
+                          onChange={(e) => setServiceForm({ ...serviceForm, promoEndDate: e.target.value })}
+                          className="w-full px-4 py-2 bg-graphite-dark border border-graphite-border text-xs text-white outline-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 3: OPERACIONAL E EQUIPE */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-primary flex items-center gap-2 border-b border-graphite-border/40 pb-2">
+                      <Clock className="w-4 h-4" />
+                      3. Duração e Barbeiros Habilitados
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                      {/* Duração em minutos */}
+                      <div className="sm:col-span-4 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Duração Estimada *</label>
+                        <select
+                          value={serviceForm.durationMin}
+                          onChange={(e) => setServiceForm({ ...serviceForm, durationMin: Number(e.target.value) })}
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border focus:border-gold-primary text-sm text-white outline-none cursor-pointer"
+                        >
+                          <option value={15}>15 minutos</option>
+                          <option value={30}>30 minutos</option>
+                          <option value={45}>45 minutos</option>
+                          <option value={60}>60 minutos (1h)</option>
+                          <option value={90}>90 minutos (1h30)</option>
+                          <option value={120}>120 minutos (2h)</option>
+                        </select>
+                      </div>
+
+                      {/* Ordem de Exibição */}
+                      <div className="sm:col-span-4 space-y-1.5">
+                        <label className="text-xs text-white/70 font-semibold">Ordem na Lista</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={serviceForm.displayOrder}
+                          onChange={(e) => setServiceForm({ ...serviceForm, displayOrder: Number(e.target.value) })}
+                          className="w-full px-4 py-2.5 bg-graphite-dark border border-graphite-border text-sm text-white outline-none"
+                        />
+                      </div>
+
+                      {/* Status Ativo */}
+                      <div className="sm:col-span-4 flex items-center justify-start pt-6">
+                        <label className="flex items-center gap-2.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={serviceForm.isActive}
+                            onChange={(e) => setServiceForm({ ...serviceForm, isActive: e.target.checked })}
+                            className="w-4 h-4 accent-gold-primary cursor-pointer"
+                          />
+                          <span className="text-xs text-white font-semibold uppercase tracking-wider">
+                            Serviço Ativo
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* Barbeiros Habilitados Multi-seleção */}
+                      <div className="sm:col-span-12 space-y-2 pt-2">
+                        <label className="text-xs text-white/70 font-semibold block">
+                          Profissionais/Barbeiros Habilitados
+                        </label>
+                        <div className="flex flex-wrap gap-3 bg-graphite-dark p-3 border border-graphite-border">
+                          {barbersList.length === 0 ? (
+                            <span className="text-xs text-white/40 italic">Todos os barbeiros ativos</span>
+                          ) : (
+                            barbersList.map((barber) => {
+                              const isChecked = serviceForm.allowedBarberIds.includes(barber.id);
+                              return (
+                                <label
+                                  key={barber.id}
+                                  className={`px-3 py-1.5 border text-xs font-semibold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+                                    isChecked
+                                      ? 'bg-gold-primary/20 border-gold-primary text-gold-primary'
+                                      : 'bg-black/40 border-graphite-border text-white/40 hover:text-white'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setServiceForm({
+                                          ...serviceForm,
+                                          allowedBarberIds: [...serviceForm.allowedBarberIds, barber.id],
+                                        });
+                                      } else {
+                                        setServiceForm({
+                                          ...serviceForm,
+                                          allowedBarberIds: serviceForm.allowedBarberIds.filter(id => id !== barber.id),
+                                        });
+                                      }
+                                    }}
+                                    className="hidden"
+                                  />
+                                  <span>{barber.name} ({barber.role})</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 4: IMAGEM DO SERVIÇO */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-gold-primary flex items-center gap-2 border-b border-graphite-border/40 pb-2">
+                      <ImageIcon className="w-4 h-4" />
+                      4. Imagem Ilustrativa do Serviço
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+                      {/* Image Preview Box */}
+                      <div className="sm:col-span-4">
+                        <div className="relative h-32 w-full rounded border border-graphite-border overflow-hidden bg-black/60 flex items-center justify-center">
+                          {serviceForm.imageUrl ? (
+                            <Image
+                              src={serviceForm.imageUrl}
+                              alt="Preview"
+                              fill
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="text-center text-white/30 text-xs">
+                              <ImageIcon className="w-8 h-8 mx-auto mb-1 opacity-50" />
+                              <span>Sem foto</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Image Upload Inputs */}
+                      <div className="sm:col-span-8 space-y-3">
+                        <div>
+                          <label className="text-xs text-white/70 font-semibold block mb-1">Upload de Imagem (Max 5MB)</label>
+                          <label className="px-4 py-2.5 bg-graphite-dark hover:bg-white/5 border border-gold-primary/40 text-gold-primary text-xs font-bold uppercase tracking-wider cursor-pointer inline-flex items-center gap-2 transition-all">
+                            <Upload className="w-4 h-4" />
+                            <span>{uploadingImage ? 'Enviando...' : 'Selecionar Imagem...'}</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                              onChange={handleImageUpload}
+                              disabled={uploadingImage}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-white/40 font-semibold block mb-1">Ou informe a URL da Imagem</label>
+                          <input
+                            type="text"
+                            value={serviceForm.imageUrl}
+                            onChange={(e) => setServiceForm({ ...serviceForm, imageUrl: e.target.value })}
+                            placeholder="/haircut-fade.png ou https://..."
+                            className="w-full px-3 py-1.5 bg-graphite-dark border border-graphite-border text-xs text-white outline-none"
+                          />
+                        </div>
+
+                        {serviceForm.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setServiceForm({ ...serviceForm, imageUrl: '' })}
+                            className="text-[10px] text-rose-400 underline hover:text-rose-300"
+                          >
+                            Remover Imagem
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Form Action Buttons */}
+                  <div className="pt-6 border-t border-graphite-border flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsServiceModalOpen(false)}
+                      className="px-6 py-3 bg-graphite-dark hover:bg-white/5 text-white/70 font-bold text-xs uppercase tracking-wider transition-colors border border-graphite-border"
+                    >
+                      Cancelar
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={savingService || uploadingImage}
+                      className="px-8 py-3 bg-gold-primary hover:bg-gold-hover text-black font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-[0_4px_20px_rgba(197,168,128,0.25)] flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {savingService && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      <span>{savingService ? 'Salvando...' : editingServiceId ? 'Salvar Alterações' : 'Cadastrar Serviço'}</span>
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
       </div>
     </div>
